@@ -41,3 +41,11 @@ o cálculo das taxas de Aprovação, Reprovação e Abandono.
 
 
 st.info("Navegue pelas seções no menu à esquerda para explorar os dados.")
+
+
+# ====== Navegação ======
+sec = st.sidebar.radio(
+    "Seções",
+    ["Início", "Visão Geral – ES", "Ranking de Municípios", "Evolução Temporal", "Comparador", "Metodologia & Fontes"]
+)
+
