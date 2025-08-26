@@ -48,7 +48,6 @@ st.write(
     - **INEP / Saeb** – Proficiências em Língua Portuguesa e Matemática utilizadas na composição do **IDEB**.  
     - **INEP / Censo Escolar (Situação do Aluno)** – Indicadores de **aprovação** que integram o **IDEB**.
     
-    > Observação: **IBGE não será utilizado** neste MVP.
     """
 )
 
@@ -68,37 +67,3 @@ sec = st.sidebar.radio(
         "Metodologia & Fontes",
     ],
 )
-
-# Placeholders vazios apenas para estruturar o app, sem carregar dados
-if sec == "Panorama IDEB":
-    st.header("Panorama IDEB — Placeholder")
-    st.write("Aqui entra o resumo geral do IDEB por município/ano quando os dados forem adicionados.")
-
-elif sec == "Ranking de Municípios":
-    st.header("Ranking de Municípios — Placeholder")
-    st.write("Tabela/gráfico de ranking por IDEB (maior/menor).")
-
-elif sec == "Evolução Temporal":
-    st.header("Evolução Temporal — Placeholder")
-    st.write("Séries históricas do IDEB por município e segmento (Anos Iniciais / Anos Finais / EM).")
-
-elif sec == "Comparador":
-    st.header("Comparador — Placeholder")
-    st.write("Comparação lado a lado de dois municípios para um período selecionado.")
-
-elif sec == "Metodologia & Fontes":
-    st.header("Metodologia (resumo)")
-    st.markdown(
-        """
-        - O **IDEB** é composto por **proficiência (Saeb)** e **fluxo (aprovação)**.  
-        - Recomenda-se construir um **pipeline de dados** para ingestão dos microdados/planilhas e geração dos indicadores.  
-        - Em produção, utilizar checagens de qualidade (cobertura, consistência temporal, outliers) e versionamento (Git).
-        """
-    )
-    st.subheader("Referências")
-    st.markdown("INEP: publicações do IDEB, Saeb e Censo Escolar. (Sem uso de bases do IBGE neste MVP.)")
-
-# Rodapé
-st.markdown("---")
-st.caption("MVP de apresentação — IDEB/ES • Estrutura pronta para receber dados e visualizações.")
-
