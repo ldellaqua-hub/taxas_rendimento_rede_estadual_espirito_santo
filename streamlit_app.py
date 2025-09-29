@@ -70,6 +70,17 @@ sec = st.sidebar.radio(
     ],
 )
 
+# -------------------------
+# Funções de carga (xlsx)
+# -------------------------
+@st.cache_data(show_spinner=False)
+def load_xlsx_bytes(file_bytes: bytes, sheet_name=0) -> pd.DataFrame:
+    return pd.read_excel(BytesIO(file_bytes), engine="openpyxl", sheet_name=sheet_name)
+
+@st.cache_data(show_spinner=False)
+def load_xlsx_local(path: str, sheet_name=0) -> pd.DataFrame:
+    return pd.read_excel(path, engine="openpyxl", sheet_name=sheet_name)
+
 
 # -------------------------
 # Seção: PANORAMA IDEB (carrega direto da raiz)
