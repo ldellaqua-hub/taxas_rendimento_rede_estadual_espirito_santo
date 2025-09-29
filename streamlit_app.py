@@ -85,22 +85,59 @@ def load_xlsx_local(path: str, sheet_name=0) -> pd.DataFrame:
     return pd.read_excel(path, engine="openpyxl", sheet_name=sheet_name)
 
 def coerce_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
-    """Converte colunas object para numéricas quando possível (troca vírgula por ponto)."""
+    """
+    Converte colunas object para numéricas apenas quando fizer sentido.
+    - Ignora colunas claramente categóricas (ex.: NO_MUNICIPIO, REDE, SG_UF, UF, NOME, DESCRICAO).
+    - Só converte se >= 60% das células virarem número após a tentativa.
+    - Troca vírgula por ponto antes de converter.
+    """
     df = df.copy()
+
+    # colunas que NUNCA vamos converter para número
+    never_numeric = []
     for c in df.columns:
-        if df[c].dtype == "object":
-            try:
-                s = df[c].astype(str).str.replace(",", ".", regex=False)
-                df[c] = pd.to_numeric(s, errors="coerce")
-            except Exception:
-                # mantém como está se não for conversível
-                pass
+        cl = c.lower()
+        if any(k in cl for k in [
+            "no_municipio", "município", "municipio",
+            "rede", "sg_uf", "uf",
+            "nome", "descricao", "descrição", "desc"
+        ]):
+            never_numeric.append(c)
+
+    for c in df.columns:
+        if df[c].dtype == "object" and c not in never_numeric:
+            s = df[c].astype(str).str.strip().replace({"": None})
+            s = s.str.replace(",", ".", regex=False)
+
+            parsed = pd.to_numeric(s, errors="coerce")
+            ratio_numeric = parsed.notna().mean()
+
+            # só converte se maioria virou número
+            if ratio_numeric >= 0.60:
+                df[c] = parsed
+            else:
+                df[c] = df[c].astype(str)  # garante texto legível
+
     return df
 
 def detect_muni_col(df: pd.DataFrame) -> str:
     """Tenta descobrir a coluna de município."""
     candidates = [c for c in df.columns if any(k in c.lower() for k in ["muni", "municí", "municipio"])]
     return candidates[0] if candidates else df.columns[0]
+
+def ffill_text_cols(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Preenche para baixo (forward-fill) colunas textuais típicas de planilhas agrupadas,
+    como NO_MUNICIPIO, REDE, SG_UF. Só preenche se a coluna existir.
+    """
+    df = df.copy()
+    candidatos = ["NO_MUNICIPIO", "REDE", "SG_UF", "UF", "NOME_MUNICIPIO", "NM_MUNICIPIO"]
+    for col in candidatos:
+        if col in df.columns:
+            df[col] = df[col].ffill()
+    return df
+
+
 
 
 # =============================
@@ -163,6 +200,7 @@ elif sec == "Panorama IDEB":
     # Normaliza cabeçalhos e tenta converter numéricos em texto
     df.columns = [str(c).strip() for c in df.columns]
     df = coerce_numeric_cols(df)
+    df = ffill_text_cols(df)
 
     # Prévia
     st.subheader("🔍 Prévia da Tabela")
@@ -181,7 +219,6 @@ elif sec == "Panorama IDEB":
         st.error("Não há colunas numéricas para plotar.")
         st.stop()
 
-    # escolhas do usuário
     col_cat = st.selectbox("Coluna categórica (X):", df.columns, index=list(df.columns).index(muni_col))
     sugestoes = [c for c in num_cols if any(k in c.lower() for k in ["ideb", "nota", "índice", "indice", "profici", "aprova"])]
     y_default = sugestoes[0] if sugestoes else num_cols[0]
@@ -216,6 +253,7 @@ elif sec == "Panorama IDEB":
 
     st.caption("✔ Requisitos do MVP atendidos: `describe()` + 1 gráfico.")
 
+
 # =============================
 # SEÇÃO: RANKING DE MUNICÍPIOS
 # =============================
@@ -230,6 +268,7 @@ elif sec == "Ranking de Municípios":
 
     df.columns = [str(c).strip() for c in df.columns]
     df = coerce_numeric_cols(df)
+    df = ffill_text_cols(df)
 
     muni_col = detect_muni_col(df)
     num_cols = df.select_dtypes(include="number").columns.tolist()
@@ -284,6 +323,7 @@ elif sec == "Ranking de Municípios":
         st.bar_chart(gdf, x="Município", y=metrica)
 
     st.caption("Dica: ajuste a métrica, a ordenação e use o filtro para localizar um município.")
+
 
 # =============================
 # PLACEHOLDERS
