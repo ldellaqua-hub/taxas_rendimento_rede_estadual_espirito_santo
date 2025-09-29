@@ -5,7 +5,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-pip install openpyxl
+
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
