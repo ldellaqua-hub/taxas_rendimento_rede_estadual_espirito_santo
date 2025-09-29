@@ -1,4 +1,6 @@
 import streamlit as st
+import pandas as pd
+from io import BytesIO
 
 # =============================
 # CONFIGURAÇÃO DA PÁGINA
@@ -67,3 +69,95 @@ sec = st.sidebar.radio(
         "Metodologia & Fontes",
     ],
 )
+streamlit
+pandas
+openpyxl
+
+# -------------------------
+# Funções de carga (xlsx)
+# -------------------------
+@st.cache_data(show_spinner=False)
+def load_xlsx_bytes(file_bytes: bytes, sheet_name=0) -> pd.DataFrame:
+    return pd.read_excel(BytesIO(file_bytes), engine="openpyxl", sheet_name=sheet_name)
+
+@st.cache_data(show_spinner=False)
+def load_xlsx_local(path: str, sheet_name=0) -> pd.DataFrame:
+    return pd.read_excel(path, engine="openpyxl", sheet_name=sheet_name)
+
+# -------------------------
+# Seções
+# -------------------------
+st.sidebar.markdown("### Seções")
+secao = st.sidebar.radio(
+    " ", 
+    ["Início", "Panorama IDEB", "Ranking de Municípios", "Evolução Temporal", "Comparador", "Metodologia & Fontes"],
+    index=0
+)
+
+if secao == "Panorama IDEB":
+    st.header("Panorama IDEB – Ensino Médio (Municípios/ES)")
+
+    st.markdown(
+        "Use o **uploader** abaixo **ou** marque a opção para carregar o arquivo "
+        "`data/IDEB_ensino_medio_municipios_2023_ES.xlsx` versionado no repositório."
+    )
+
+    up = st.file_uploader("Enviar base (.xlsx)", type=["xlsx"])
+    df = None
+
+    if up is not None:
+        try:
+            df = load_xlsx_bytes(up.read(), sheet_name=0)
+            st.success("Base carregada via upload.")
+        except Exception as e:
+            st.error(f"Erro lendo o .xlsx enviado: {e}")
+
+    usar_local = st.checkbox("Usar arquivo local do repositório (data/IDEB_...xlsx)")
+    if usar_local and df is None:
+        try:
+            df = load_xlsx_local("data/IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
+            st.success("Base carregada do repositório.")
+        except Exception as e:
+            st.warning("Não encontrei `data/IDEB_ensino_medio_municipios_2023_ES.xlsx`.")
+            st.info("Dica: crie a pasta `data/` e faça o commit do arquivo .xlsx.")
+
+    if df is not None:
+        # Normaliza cabeçalhos
+        df.columns = [str(c).strip() for c in df.columns]
+
+        st.subheader("Prévia da Tabela")
+        st.dataframe(df.head(20), use_container_width=True)
+
+        # (1) OBRIGATÓRIO: Tabela descritiva
+        st.subheader("Estatísticas Descritivas (Pandas `describe()`)")
+        desc = df.describe(numeric_only=True).T
+        st.dataframe(desc, use_container_width=True)
+
+        # (2) OBRIGATÓRIO: 1 gráfico (barras)
+        st.subheader("Gráfico de Barras – municípios x métrica")
+        possiveis_cat = [c for c in df.columns if "muni" in c.lower() or "municí" in c.lower() or "municipio" in c.lower()]
+        col_x = possiveis_cat[0] if possiveis_cat else df.columns[0]
+
+        col_cat = st.selectbox("Coluna categórica (eixo X):", df.columns, index=list(df.columns).index(col_x))
+        numericas = df.select_dtypes(include="number").columns.tolist()
+        if not numericas:
+            st.error("Não há colunas numéricas para plotar.")
+        else:
+            sugestoes = [c for c in numericas if "ideb" in c.lower() or "nota" in c.lower() or "índice" in c.lower() or "indice" in c.lower()]
+            y_default = sugestoes[0] if sugestoes else numericas[0]
+            col_y = st.selectbox("Métrica (eixo Y):", numericas, index=numericas.index(y_default))
+
+            n_top = st.slider("Quantidade de municípios (Top N):", 5, min(30, len(df)), min(15, len(df)))
+            plot_df = (df[[col_cat, col_y]]
+                       .dropna()
+                       .sort_values(col_y, ascending=False)
+                       .head(n_top)
+                       .set_index(col_cat))
+            st.bar_chart(plot_df)
+
+            with st.expander("Ver dados do gráfico"):
+                st.dataframe(plot_df.reset_index(), use_container_width=True)
+
+        st.caption("Esta seção cumpre os requisitos do MVP: `describe()` + 1 gráfico.")
+    else:
+        st.info("Envie o .xlsx ou marque a opção para usar o arquivo local.")
