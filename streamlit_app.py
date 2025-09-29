@@ -112,9 +112,8 @@ if sec == "Panorama IDEB":
 
     # (1) OBRIGATÓRIO: Tabela descritiva
     st.subheader("Estatísticas Descritivas (Pandas `describe()`)")
-# pandas dessa imagem não aceita numeric_only; filtra manualmente as numéricas
-desc = df.select_dtypes(include="number").describe().T
-st.dataframe(desc, use_container_width=True)
+    desc = df.select_dtypes(include="number").describe().T
+    st.dataframe(desc, use_container_width=True)
 
     # (2) OBRIGATÓRIO: 1 gráfico (barras)
     st.subheader("Gráfico de Barras – municípios x métrica")
