@@ -84,6 +84,9 @@ def load_xlsx_bytes(file_bytes: bytes, sheet_name=0) -> pd.DataFrame:
 def load_xlsx_local(path: str, sheet_name=0) -> pd.DataFrame:
     return pd.read_excel(path, engine="openpyxl", sheet_name=sheet_name)
 
+# --- tentar converter colunas "numéricas em texto" para número
+df = df.copy()
+df = df.apply(lambda s: pd.to_numeric(s, errors="coerce") if s.dtype == "object" else s)
 
 # -------------------------
 # Seção: PANORAMA IDEB (carrega direto da raiz)
@@ -108,9 +111,10 @@ if sec == "Panorama IDEB":
     st.dataframe(df.head(20), use_container_width=True)
 
     # (1) OBRIGATÓRIO: Tabela descritiva
-    st.subheader("Estatísticas Descritivas (Pandas `describe()`)") 
-    desc = df.describe(numeric_only=True).T
-    st.dataframe(desc, use_container_width=True)
+    st.subheader("Estatísticas Descritivas (Pandas `describe()`)")
+# pandas dessa imagem não aceita numeric_only; filtra manualmente as numéricas
+desc = df.select_dtypes(include="number").describe().T
+st.dataframe(desc, use_container_width=True)
 
     # (2) OBRIGATÓRIO: 1 gráfico (barras)
     st.subheader("Gráfico de Barras – municípios x métrica")
