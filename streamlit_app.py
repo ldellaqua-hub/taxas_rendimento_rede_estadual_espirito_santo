@@ -564,18 +564,29 @@ elif sec == "Comparador":
         with col3:
             topn = st.slider("Top N (após filtro de municípios):", 2, min(50, len(sel_munis)), min(10, len(sel_munis)))
 
-        # Consolida (média) caso haja múltiplas colunas no mesmo ano
         cols_ano1 = familias[fam1][ano1]
         base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_ano1].copy()
         base[muni_col] = base[muni_col].astype(str)
 
-        # força numérico e calcula média por município
-        for c in cols_ano1:
-            base[c] = pd.to_numeric(base[c].replace({"-": None, "None": None}), errors="coerce")
+        # ✅ CORREÇÃO: converter em lote com apply (garante Series e trata strings especiais)
+        def _coerce_block(d, cols):
+            cols = [c for c in cols if c in d.columns]
+            if not cols:
+                return d
+            d[cols] = (
+                d[cols]
+                .apply(lambda s: s.astype(str)
+                                  .str.replace(",", ".", regex=False)
+                                  .replace({"-": None, "None": None, "nan": None, "NA": None, "": None}))
+                .apply(lambda s: pd.to_numeric(s, errors="coerce"))
+            )
+            return d
+
+        base = _coerce_block(base, cols_ano1)
 
         comp = (
             base
-            .assign(**{"valor": base[cols_ano1].mean(axis=1, skipna=True)})
+            .assign(valor=base[cols_ano1].mean(axis=1, skipna=True))
             [[muni_col, "valor"]]
             .dropna(subset=["valor"])
             .groupby(muni_col, as_index=False)["valor"].mean()
@@ -584,7 +595,6 @@ elif sec == "Comparador":
 
         comp_top = comp.head(topn)
 
-        # Gráfico
         if HAS_ALTAIR:
             chart = (
                 alt.Chart(comp_top)
@@ -624,14 +634,14 @@ elif sec == "Comparador":
 
         cols_x = familias[fam_x][ano_x]
         cols_y = familias[fam_y][ano_y]
+        cols_all = cols_x + cols_y
 
-        base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_x + cols_y].copy()
+        base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_all].copy()
         base[muni_col] = base[muni_col].astype(str)
 
-        for c in cols_x + cols_y:
-            base[c] = pd.to_numeric(base[c].replace({"-": None, "None": None}), errors="coerce")
+        # ✅ CORREÇÃO: mesma conversão robusta em lote
+        base = _coerce_block(base, cols_all)
 
-        # média por família/ano
         base["X"] = base[cols_x].mean(axis=1, skipna=True)
         base["Y"] = base[cols_y].mean(axis=1, skipna=True)
 
@@ -651,11 +661,9 @@ elif sec == "Comparador":
                     .encode(
                         x=alt.X("X:Q", title=f"{fam_x} — {ano_x}"),
                         y=alt.Y("Y:Q", title=f"{fam_y} — {ano_y}"),
-                        color=alt.value("#4c78a8"),
                         tooltip=[muni_col, alt.Tooltip("X:Q", format=".3f"), alt.Tooltip("Y:Q", format=".3f")],
                     )
                 )
-                # rótulos
                 labels = (
                     alt.Chart(scatter_df)
                     .mark_text(align="left", dx=7, dy=3)
@@ -665,7 +673,6 @@ elif sec == "Comparador":
             else:
                 st.scatter_chart(scatter_df.set_index(muni_col))
 
-            # Tabela + download
             st.dataframe(scatter_df, use_container_width=True)
             st.download_button(
                 "⬇️ Baixar CSV (dispersão)",
