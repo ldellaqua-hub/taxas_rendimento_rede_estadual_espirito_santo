@@ -496,8 +496,189 @@ elif sec == "Evolução Temporal":
 
 
 elif sec == "Comparador":
-    st.header("Comparador")
-    st.info("Em construção.")
+    st.header("🔀 Comparador de Municípios — Ensino Médio (ES)")
+
+    # 1) Carrega e prepara a base
+    try:
+        df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
+    except Exception as e:
+        st.error(f"Não foi possível abrir o Excel: {e}")
+        st.stop()
+
+    df.columns = [str(c).strip() for c in df.columns]
+    df = coerce_numeric_cols(df)
+    df = ffill_text_cols(df)
+
+    # Mantém somente REDE = Estadual
+    if "REDE" in df.columns:
+        df["REDE"] = df["REDE"].map(normalize_rede)
+        df = df[df["REDE"] == "Estadual"].copy()
+
+    muni_col = detect_muni_col(df)
+
+    # 2) Descobre famílias de colunas com ano no nome
+    import re
+    cols_com_ano = [c for c in df.columns if re.search(r"20\d{2}", c)]
+    if not cols_com_ano:
+        st.warning("Não encontrei colunas com ano no nome (padrão 20XX).")
+        st.stop()
+
+    def familia(col):
+        return re.split(r"20\d{2}", col)[0].rstrip("_")
+
+    # famílias -> {família: {ano: [cols...]}}
+    familias = {}
+    for c in cols_com_ano:
+        fam = familia(c)
+        yr = int(re.findall(r"(20\d{2})", c)[0])
+        familias.setdefault(fam, {}).setdefault(yr, []).append(c)
+
+    familias_ordenadas = sorted(familias.keys())
+
+    # 3) Opções comuns
+    with st.sidebar:
+        st.markdown("### ⚙️ Opções — Comparador")
+        municipios = sorted(df[muni_col].dropna().astype(str).unique().tolist())
+        sel_munis = st.multiselect(
+            "Municípios (2+):",
+            municipios,
+            default=municipios[:5] if len(municipios) >= 5 else municipios
+        )
+
+    if len(sel_munis) < 2:
+        st.info("Selecione **pelo menos 2 municípios** para comparar.")
+        st.stop()
+
+    # 4) Abas de comparação
+    tab_bar, tab_scatter = st.tabs(["📊 Barras (1 métrica)", "🔎 Dispersão (2 métricas)"])
+
+    # ------------- ABA 1: BARRAS (1 métrica) -------------
+    with tab_bar:
+        st.subheader("📊 Barras — uma métrica em um ano")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            fam1 = st.selectbox("Família da métrica:", familias_ordenadas, key="cmp_fam1")
+        anos_fam1 = sorted(familias[fam1].keys())
+        with col2:
+            ano1 = st.selectbox("Ano:", anos_fam1, index=len(anos_fam1)-1, key="cmp_ano1")
+        with col3:
+            topn = st.slider("Top N (após filtro de municípios):", 2, min(50, len(sel_munis)), min(10, len(sel_munis)))
+
+        # Consolida (média) caso haja múltiplas colunas no mesmo ano
+        cols_ano1 = familias[fam1][ano1]
+        base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_ano1].copy()
+        base[muni_col] = base[muni_col].astype(str)
+
+        # força numérico e calcula média por município
+        for c in cols_ano1:
+            base[c] = pd.to_numeric(base[c].replace({"-": None, "None": None}), errors="coerce")
+
+        comp = (
+            base
+            .assign(**{"valor": base[cols_ano1].mean(axis=1, skipna=True)})
+            [[muni_col, "valor"]]
+            .dropna(subset=["valor"])
+            .groupby(muni_col, as_index=False)["valor"].mean()
+            .sort_values("valor", ascending=False)
+        )
+
+        comp_top = comp.head(topn)
+
+        # Gráfico
+        if HAS_ALTAIR:
+            chart = (
+                alt.Chart(comp_top)
+                .mark_bar()
+                .encode(
+                    x=alt.X(f"{muni_col}:N", sort='-y', axis=alt.Axis(labelAngle=-40, title="Município")),
+                    y=alt.Y("valor:Q", title=f"{fam1} — {ano1}"),
+                    tooltip=[muni_col, alt.Tooltip("valor:Q", format=".3f")],
+                )
+                .properties(height=420)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            st.bar_chart(comp_top.set_index(muni_col)["valor"])
+
+        st.dataframe(comp_top.reset_index(drop=True), use_container_width=True)
+        st.download_button(
+            "⬇️ Baixar CSV (barras)",
+            data=comp_top.to_csv(index=False).encode("utf-8"),
+            file_name=f"comparador_barras_{fam1}_{ano1}.csv",
+            mime="text/csv",
+        )
+
+    # ------------- ABA 2: DISPERSÃO (2 métricas) -------------
+    with tab_scatter:
+        st.subheader("🔎 Dispersão — duas métricas (X vs Y)")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            fam_x = st.selectbox("Família (eixo X):", familias_ordenadas, key="cmp_fam_x")
+            anos_x = sorted(familias[fam_x].keys())
+            ano_x = st.selectbox("Ano (X):", anos_x, index=len(anos_x)-1, key="cmp_ano_x")
+        with c2:
+            fam_y = st.selectbox("Família (eixo Y):", familias_ordenadas, key="cmp_fam_y")
+            anos_y = sorted(familias[fam_y].keys())
+            ano_y = st.selectbox("Ano (Y):", anos_y, index=len(anos_y)-1, key="cmp_ano_y")
+
+        cols_x = familias[fam_x][ano_x]
+        cols_y = familias[fam_y][ano_y]
+
+        base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_x + cols_y].copy()
+        base[muni_col] = base[muni_col].astype(str)
+
+        for c in cols_x + cols_y:
+            base[c] = pd.to_numeric(base[c].replace({"-": None, "None": None}), errors="coerce")
+
+        # média por família/ano
+        base["X"] = base[cols_x].mean(axis=1, skipna=True)
+        base["Y"] = base[cols_y].mean(axis=1, skipna=True)
+
+        scatter_df = (
+            base[[muni_col, "X", "Y"]]
+            .dropna(subset=["X", "Y"])
+            .groupby(muni_col, as_index=False)[["X", "Y"]].mean()
+        )
+
+        if scatter_df.empty:
+            st.warning("Sem dados numéricos suficientes para a combinação escolhida.")
+        else:
+            if HAS_ALTAIR:
+                sc = (
+                    alt.Chart(scatter_df)
+                    .mark_circle(size=120)
+                    .encode(
+                        x=alt.X("X:Q", title=f"{fam_x} — {ano_x}"),
+                        y=alt.Y("Y:Q", title=f"{fam_y} — {ano_y}"),
+                        color=alt.value("#4c78a8"),
+                        tooltip=[muni_col, alt.Tooltip("X:Q", format=".3f"), alt.Tooltip("Y:Q", format=".3f")],
+                    )
+                )
+                # rótulos
+                labels = (
+                    alt.Chart(scatter_df)
+                    .mark_text(align="left", dx=7, dy=3)
+                    .encode(x="X:Q", y="Y:Q", text=f"{muni_col}:N")
+                )
+                st.altair_chart(sc + labels, use_container_width=True)
+            else:
+                st.scatter_chart(scatter_df.set_index(muni_col))
+
+            # Tabela + download
+            st.dataframe(scatter_df, use_container_width=True)
+            st.download_button(
+                "⬇️ Baixar CSV (dispersão)",
+                data=scatter_df.to_csv(index=False).encode("utf-8"),
+                file_name=f"comparador_disp_{fam_x}_{ano_x}_vs_{fam_y}_{ano_y}.csv",
+                mime="text/csv",
+            )
+
+    st.caption(
+        "No modo **Barras**, se houver múltiplas colunas para o mesmo ano (ex.: 2017_1…2017_4), "
+        "é usada a **média**. No modo **Dispersão**, cada eixo usa a média da família/ano escolhidos."
+    )
+
 
 elif sec == "Metodologia & Fontes":
     st.header("Metodologia & Fontes")
