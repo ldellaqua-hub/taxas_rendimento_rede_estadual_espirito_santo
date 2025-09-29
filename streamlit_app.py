@@ -85,15 +85,14 @@ def load_xlsx_local(path: str, sheet_name=0) -> pd.DataFrame:
 # -------------------------
 # Seção: PANORAMA IDEB (carrega direto da raiz)
 # -------------------------
-elif secao == "Panorama IDEB":
+if sec == "Panorama IDEB":
     st.header("Panorama IDEB – Ensino Médio (Municípios/ES)")
 
-    # tenta ler direto da raiz do repositório
     try:
         df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
         st.success("Base IDEB_ensino_medio_municipios_2023_ES.xlsx carregada da raiz do repositório.")
     except FileNotFoundError:
-        st.error("Arquivo `IDEB_ensino_medio_municipios_2023_ES.xlsx` não encontrado na **raiz** do repositório.")
+        st.error("Arquivo `IDEB_ensino_medio_municipios_2023_ES.xlsx` não encontrado na raiz do repositório.")
         st.stop()
     except Exception as e:
         st.error(f"Não foi possível ler o Excel: {e}")
@@ -106,7 +105,7 @@ elif secao == "Panorama IDEB":
     st.dataframe(df.head(20), use_container_width=True)
 
     # (1) OBRIGATÓRIO: Tabela descritiva
-    st.subheader("Estatísticas Descritivas (Pandas `describe()`)")
+    st.subheader("Estatísticas Descritivas (Pandas `describe()`)") 
     desc = df.describe(numeric_only=True).T
     st.dataframe(desc, use_container_width=True)
 
