@@ -69,9 +69,7 @@ sec = st.sidebar.radio(
         "Metodologia & Fontes",
     ],
 )
-streamlit
-pandas
-openpyxl
+
 
 # -------------------------
 # Funções de carga (xlsx)
