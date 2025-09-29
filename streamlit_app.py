@@ -380,7 +380,6 @@ elif sec == "Evolução Temporal":
         st.warning("Não encontrei colunas com ano no nome (padrão 20XX).")
         st.stop()
 
-    # família = parte antes do primeiro ano; ex.: "VL_APROVACAO_2017_1" -> "VL_APROVACAO"
     def familia(col):
         return re.split(r"20\d{2}", col)[0].rstrip("_")
 
@@ -409,19 +408,24 @@ elif sec == "Evolução Temporal":
 
     # 4) Criar tabela "longa" (ano, valor) para a família escolhida
     cols_familia = familias[fam_escolhida]
-
-    # Subconjunto da base com municípios selecionados
     base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_familia].copy()
     base[muni_col] = base[muni_col].astype(str)
 
-    # Converter wide -> long
     long_rows = []
     for c in cols_familia:
         anos = re.findall(r"(20\d{2})", c)
         if not anos:
             continue
-        ano = int(anos[0])  # pega o primeiro ano encontrado
+        ano = int(anos[0])
         tmp = base[[muni_col, c]].rename(columns={c: "valor"})
+
+        # 🔧 LIMPEZA CRÍTICA: força numérico e trata traços/strings
+        tmp["valor"] = (
+            tmp["valor"]
+            .replace({"-": None, "None": None, "nan": None, "NA": None})
+        )
+        tmp["valor"] = pd.to_numeric(tmp["valor"], errors="coerce")
+
         tmp["ano"] = ano
         long_rows.append(tmp)
 
@@ -431,19 +435,24 @@ elif sec == "Evolução Temporal":
 
     long_df = pd.concat(long_rows, ignore_index=True)
 
-    # Caso haja mais de uma coluna para o mesmo ano (ex.: _2017_1, _2017_2, _2017_3, _2017_4),
-    # agregamos por média.
+    # remove linhas sem valor numérico
+    long_df = long_df.dropna(subset=["valor"])
+
+    # Se houver várias colunas no mesmo ano (ex.: _2017_1.._4), agrega por média
     long_df = (
         long_df
         .groupby([muni_col, "ano"], as_index=False, sort=True)["valor"]
-        .mean()
+        .mean()  # agora é seguro, só tem número
         .sort_values(["ano", muni_col])
     )
+
+    if long_df.empty:
+        st.warning("Sem valores numéricos válidos para a combinação escolhida.")
+        st.stop()
 
     # 5) Plot
     st.subheader(f"📊 Série temporal — {fam_escolhida}")
     if HAS_ALTAIR:
-        import altair as alt
         chart = (
             alt.Chart(long_df)
             .mark_line(point=True)
@@ -457,23 +466,16 @@ elif sec == "Evolução Temporal":
         )
         st.altair_chart(chart, use_container_width=True)
     else:
-        # fallback: pivot para line_chart
         pivot = long_df.pivot(index="ano", columns=muni_col, values="valor").sort_index()
         st.line_chart(pivot)
 
-    # 6) (Opcional) linha da média estadual (sobre os municípios selecionados)
+    # 6) (Opcional) média estadual (entre municípios selecionados)
     if mostrar_media_estado and HAS_ALTAIR:
-        medias = (
-            long_df.groupby("ano", as_index=False)["valor"].mean()
-        )
+        medias = long_df.groupby("ano", as_index=False)["valor"].mean()
         media_chart = (
             alt.Chart(medias)
-            .mark_line(point=True, strokeDash=[6,3], color="black")
-            .encode(
-                x="ano:O",
-                y="valor:Q",
-                tooltip=[alt.Tooltip("valor:Q", format=".3f"), "ano"]
-            )
+            .mark_line(point=True, strokeDash=[6, 3], color="black")
+            .encode(x="ano:O", y="valor:Q", tooltip=[alt.Tooltip("valor:Q", format=".3f"), "ano"])
         )
         st.altair_chart(chart + media_chart, use_container_width=True)
 
@@ -491,6 +493,7 @@ elif sec == "Evolução Temporal":
         "Observação: quando há múltiplas colunas no mesmo ano (ex.: 2017_1, 2017_2, 2017_3, 2017_4), "
         "o valor anual mostrado é a **média** dessas colunas."
     )
+
 
 elif sec == "Comparador":
     st.header("Comparador")
