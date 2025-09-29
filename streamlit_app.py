@@ -2,7 +2,11 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 
-
+try:
+    import altair as alt
+    HAS_ALTAIR = True
+except Exception:
+    HAS_ALTAIR = False
 
 
 # =============================
