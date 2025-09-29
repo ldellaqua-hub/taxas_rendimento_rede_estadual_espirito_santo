@@ -137,6 +137,7 @@ def ffill_text_cols(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].ffill()
     return df
 
+# ===== NOVO: normaliza rótulos de 'REDE' e permite filtrar =====
 def normalize_rede(value):
     """Padroniza rótulos de rede para facilitar o filtro."""
     if pd.isna(value):
@@ -151,6 +152,7 @@ def normalize_rede(value):
     if t.startswith("priv"):
         return "Privada"
     return str(value).strip().title()
+# ================================================================
 
 
 # =============================
@@ -194,13 +196,12 @@ if sec == "Início":
     )
 
 # =============================
-# SEÇÃO: PANORAMA IDEB (carrega direto da raiz)
+# SEÇÃO: PANORAMA IDEB
 # =============================
 elif sec == "Panorama IDEB":
     st.header("Panorama IDEB – Ensino Médio (Municípios/ES)")
 
     try:
-        # ⚠️ Arquivo deve estar na RAIZ do repositório com este nome exato
         df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
         st.success("Base `IDEB_ensino_medio_municipios_2023_ES.xlsx` carregada da raiz do repositório.")
     except FileNotFoundError:
@@ -210,10 +211,16 @@ elif sec == "Panorama IDEB":
         st.error(f"Não foi possível ler o Excel: {e}")
         st.stop()
 
-    # Normaliza cabeçalhos e tenta converter numéricos em texto
+    # normaliza cabeçalhos, tipa numéricos e preenche textos
     df.columns = [str(c).strip() for c in df.columns]
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
+
+    # ===== NOVO: normaliza e filtra apenas REDE = 'Estadual'
+    if "REDE" in df.columns:
+        df["REDE"] = df["REDE"].map(normalize_rede)
+        df = df[df["REDE"] == "Estadual"].copy()
+    # ================================================
 
     # Prévia
     st.subheader("🔍 Prévia da Tabela")
@@ -224,7 +231,7 @@ elif sec == "Panorama IDEB":
     desc = df.select_dtypes(include="number").describe().T
     st.dataframe(desc, use_container_width=True)
 
-    # --------- gráfico com nomes no eixo X ---------
+    # (2) Gráfico de barras
     st.subheader("📊 Gráfico de Barras – municípios x métrica")
     muni_col = detect_muni_col(df)
     num_cols = df.select_dtypes(include="number").columns.tolist()
@@ -266,7 +273,6 @@ elif sec == "Panorama IDEB":
 
     st.caption("✔ Requisitos do MVP atendidos: `describe()` + 1 gráfico.")
 
-
 # =============================
 # SEÇÃO: RANKING DE MUNICÍPIOS
 # =============================
@@ -282,6 +288,12 @@ elif sec == "Ranking de Municípios":
     df.columns = [str(c).strip() for c in df.columns]
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
+
+    # ===== NOVO: normaliza e filtra apenas REDE = 'Estadual'
+    if "REDE" in df.columns:
+        df["REDE"] = df["REDE"].map(normalize_rede)
+        df = df[df["REDE"] == "Estadual"].copy()
+    # ================================================
 
     muni_col = detect_muni_col(df)
     num_cols = df.select_dtypes(include="number").columns.tolist()
@@ -336,7 +348,6 @@ elif sec == "Ranking de Municípios":
         st.bar_chart(gdf, x="Município", y=metrica)
 
     st.caption("Dica: ajuste a métrica, a ordenação e use o filtro para localizar um município.")
-
 
 # =============================
 # PLACEHOLDERS
