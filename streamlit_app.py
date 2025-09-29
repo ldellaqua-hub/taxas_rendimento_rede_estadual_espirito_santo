@@ -196,8 +196,80 @@ elif sec == "Panorama IDEB":
 # DEMAIS SEÇÕES (placeholders)
 # =============================
 elif sec == "Ranking de Municípios":
-    st.header("Ranking de Municípios")
-    st.info("Em construção.")
+    st.header("🏆 Ranking de Municípios — Ensino Médio (ES)")
+
+    # 1) Carrega a base (mesmo arquivo na RAIZ)
+    try:
+        df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
+    except Exception as e:
+        st.error(f"Não foi possível abrir o Excel: {e}")
+        st.stop()
+
+    # 2) Limpa cabeçalhos e tipa numéricos
+    df.columns = [str(c).strip() for c in df.columns]
+    df = coerce_numeric_cols(df)
+
+    # 3) Detecta coluna de município
+    muni_cols = [c for c in df.columns
+                 if "muni" in c.lower() or "municí" in c.lower() or "municipio" in c.lower()]
+    if not muni_cols:
+        muni_col = df.columns[0]
+        st.warning(f"Não encontrei coluna de município; usando `{muni_col}`.")
+    else:
+        muni_col = muni_cols[0]
+
+    # 4) Seleção de métrica e opções
+    num_cols = df.select_dtypes(include="number").columns.tolist()
+    if not num_cols:
+        st.error("A base não possui colunas numéricas para ranquear.")
+        st.stop()
+
+    sugestoes = [c for c in num_cols if any(k in c.lower() for k in ["ideb", "nota", "índice", "indice", "profici", "aprova"])]
+    metrica_default = sugestoes[0] if sugestoes else num_cols[0]
+
+    with st.sidebar:
+        st.markdown("### ⚙️ Opções do Ranking")
+        metrica = st.selectbox("Métrica:", num_cols, index=num_cols.index(metrica_default))
+        ordem = st.radio("Ordenação:", ["Maior → Menor", "Menor → Maior"], index=0, horizontal=True)
+        topn = st.slider("Top N", min_value=5, max_value=min(100, len(df)), value=min(20, len(df)))
+        termo = st.text_input("Filtrar por nome do município (opcional)")
+
+    # 5) Filtra e ranqueia
+    base = df[[muni_col, metrica]].dropna().copy()
+    if termo.strip():
+        base = base[base[muni_col].astype(str).str.contains(termo.strip(), case=False, na=False)]
+
+    asc = (ordem == "Menor → Maior")
+    base = base.sort_values(metrica, ascending=asc, kind="mergesort")
+    base["Posição"] = range(1, len(base) + 1)
+
+    ranking = base[["Posição", muni_col, metrica]].head(topn)
+
+    # 6) Exibe tabela e permite download
+    st.subheader("📋 Tabela do Ranking")
+    st.dataframe(
+        ranking.reset_index(drop=True),
+        use_container_width=True,
+    )
+
+    csv = ranking.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "⬇️ Baixar ranking (CSV)",
+        data=csv,
+        file_name=f"ranking_municipios_{metrica}.csv",
+        mime="text/csv",
+    )
+
+    # 7) Gráfico de barras do Top N
+    st.subheader("📊 Top N — Gráfico de Barras")
+    plot_df = ranking.set_index(muni_col)[metrica]
+    st.bar_chart(plot_df)
+
+    # 8) Nota de rodapé
+    st.caption(
+        "Dica: altere a **métrica** e a **ordenação** no painel lateral. "
+        "Use o campo de **filtro** para localizar rapidamente um município."
+    )
 
 elif sec == "Evolução Temporal":
     st.header("Evolução Temporal")
