@@ -569,18 +569,22 @@ elif sec == "Comparador":
         base[muni_col] = base[muni_col].astype(str)
 
         # ✅ CORREÇÃO: converter em lote com apply (garante Series e trata strings especiais)
-        def _coerce_block(d, cols):
-            cols = [c for c in cols if c in d.columns]
-            if not cols:
-                return d
-            d[cols] = (
-                d[cols]
-                .apply(lambda s: s.astype(str)
-                                  .str.replace(",", ".", regex=False)
-                                  .replace({"-": None, "None": None, "nan": None, "NA": None, "": None}))
-                .apply(lambda s: pd.to_numeric(s, errors="coerce"))
-            )
-            return d
+        def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
+    """Converte colunas para numéricas com tratamento robusto, uma a uma."""
+    # garante lista de colunas existentes
+    cols = [c for c in list(cols) if c in d.columns]
+    if not cols:
+        return d
+
+    for c in cols:
+        s = d[c].astype(str)
+        # normaliza separador decimal e valores "nulos"
+        s = s.str.replace(",", ".", regex=False)
+        s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
+        # força numérico
+        d[c] = pd.to_numeric(s, errors="coerce")
+
+    return d
 
         base = _coerce_block(base, cols_ano1)
 
