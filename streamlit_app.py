@@ -137,7 +137,20 @@ def ffill_text_cols(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].ffill()
     return df
 
-
+def normalize_rede(value):
+    """Padroniza rótulos de rede para facilitar o filtro."""
+    if pd.isna(value):
+        return value
+    t = str(value).strip().lower()
+    if t.startswith("estad"):   # estadual, ESTADUAL…
+        return "Estadual"
+    if t.startswith("munic") or t.startswith("públi") or t.startswith("publi"):
+        return "Municipal/Pública"
+    if t.startswith("feder"):
+        return "Federal"
+    if t.startswith("priv"):
+        return "Privada"
+    return str(value).strip().title()
 
 
 # =============================
