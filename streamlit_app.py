@@ -12,7 +12,7 @@ st.set_page_config(
 # =============================
 # CABEÇALHO / APRESENTAÇÃO (APENAS TEXTO)
 # =============================
-st.title("📈 Painel teste IDEB – Rede Estadual/ES (por Município)")
+st.title("📈 Painel IDEB – Rede Estadual/ES (por Município)")
 
 st.markdown(
     """
