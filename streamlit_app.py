@@ -172,9 +172,11 @@ def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
         if is_numeric_dtype(s):
             d[c] = pd.to_numeric(s, errors="coerce")
         else:
-            s = s.astype(str)
-            s = s.str.replace(",", ".", regex=False)
-            s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
+            # evita usar o acessor .str
+            s = s.astype(str)                                   # garante string
+            s = s.replace(",", ".", regex=True)                 # vírgula -> ponto
+            s = s.replace({"-": None, "None": None,             # nulos "textuais"
+                           "nan": None, "NA": None, "": None})
             d[c] = pd.to_numeric(s, errors="coerce")
 
     return d
