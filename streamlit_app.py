@@ -137,6 +137,41 @@ def ffill_text_cols(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].ffill()
     return df
 
+def _muni_name_col(df: pd.DataFrame) -> str | None:
+    prefer = ["NO_MUNICIPIO", "NOME_MUNICIPIO", "NM_MUNICIPIO", "MUNICIPIO"]
+    for c in prefer:
+        if c in df.columns:
+            return c
+    # genérico: qualquer coluna com "muni" que NÃO comece com CO/CD/COD/ID
+    for c in df.columns:
+        cl = str(c).lower()
+        if "muni" in cl and not (cl.startswith("co_") or cl.startswith("cd_")
+                                 or cl.startswith("cod") or cl.startswith("id_")):
+            return c
+    return None
+
+def _muni_code_col(df: pd.DataFrame) -> str | None:
+    prefer = ["CO_MUNICIPIO", "CD_MUNICIPIO", "COD_MUNICIPIO", "ID_MUNICIPIO"]
+    for c in prefer:
+        if c in df.columns:
+            return c
+    for c in df.columns:
+        if "co_municipio" in str(c).lower():
+            return c
+    return None
+
+def get_muni_label_col(df: pd.DataFrame) -> tuple[str | None, str]:
+    """
+    Retorna (coluna_codigo, coluna_para_exibir).
+    Se houver coluna de nome, usa ela para exibir; senão usa a de código.
+    """
+    code = _muni_code_col(df)
+    name = _muni_name_col(df)
+    label = name or code or df.columns[0]
+    return code, label
+
+
+
 # ===== NOVO: normaliza rótulos de 'REDE' e permite filtrar =====
 def normalize_rede(value):
     """Padroniza rótulos de rede para facilitar o filtro."""
