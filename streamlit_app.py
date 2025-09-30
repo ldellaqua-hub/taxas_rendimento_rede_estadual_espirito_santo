@@ -37,8 +37,7 @@ st.subheader("Objetivo do Projeto")
 st.write(
     """
     Criar um painel de apresentação para exploração do **IDEB (Índice de Desenvolvimento da Educação Básica)** da rede 
-    estadual do Espírito Santo, com foco em visualizações e comparações **por município**. Este MVP não carrega dados
-    reais — serve como base de estrutura para, futuramente, incluir upload de CSV, gráficos e painéis analíticos.
+    estadual do Espírito Santo, com foco em visualizações e comparações **por município**.
     """
 )
 
