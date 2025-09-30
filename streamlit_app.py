@@ -152,6 +152,24 @@ def normalize_rede(value):
     if t.startswith("priv"):
         return "Privada"
     return str(value).strip().title()
+
+def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
+    """
+    Converte um conjunto de colunas para numéricas de forma robusta:
+    - troca vírgula por ponto;
+    - trata '-', 'None', 'nan', 'NA' e string vazia como NaN.
+    """
+    d = d.copy()
+    cols = [c for c in list(cols) if c in d.columns]
+    if not cols:
+        return d
+    for c in cols:
+        s = d[c].astype(str)
+        s = s.str.replace(",", ".", regex=False)
+        s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
+        d[c] = pd.to_numeric(s, errors="coerce")
+    return d
+
 # ================================================================
 
 
