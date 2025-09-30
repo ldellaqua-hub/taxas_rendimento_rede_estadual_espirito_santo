@@ -155,31 +155,45 @@ def normalize_rede(value):
 
 # ===== Helper robusto para converter várias colunas em numéricas =====
 from pandas.api.types import is_numeric_dtype
+import numpy as np
+import pandas as pd
 
 def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
     """
-    Converte um conjunto de colunas para numéricas:
-    - se a coluna já for numérica, só garante via to_numeric;
-    - se for texto, normaliza vírgula/ponto e trata '-', 'None', 'nan', 'NA', '' como NaN.
+    Converte as colunas indicadas para numéricas de forma robusta.
+    Aceita 'cols' como lista de strings OU lista de listas (aninhada).
     """
     d = d.copy()
-    cols = [c for c in list(cols) if c in d.columns]
-    if not cols:
+
+    # Achata cols caso venham listas/arrays dentro da lista principal
+    flat_cols = []
+    if isinstance(cols, (list, tuple, pd.Index, np.ndarray)):
+        for c in cols:
+            if isinstance(c, (list, tuple, pd.Index, np.ndarray)):
+                flat_cols.extend(list(c))
+            else:
+                flat_cols.append(c)
+    else:
+        flat_cols = [cols]
+
+    # Mantém só as que existem no DataFrame
+    flat_cols = [c for c in flat_cols if c in d.columns]
+    if not flat_cols:
         return d
 
-    for c in cols:
+    for c in flat_cols:
         s = d[c]
         if is_numeric_dtype(s):
             d[c] = pd.to_numeric(s, errors="coerce")
         else:
-            # evita usar o acessor .str
-            s = s.astype(str)                                   # garante string
-            s = s.replace(",", ".", regex=True)                 # vírgula -> ponto
-            s = s.replace({"-": None, "None": None,             # nulos "textuais"
-                           "nan": None, "NA": None, "": None})
+            # força string, normaliza vírgula, trata nulos "textuais"
+            s = s.astype(str)
+            s = s.replace(",", ".", regex=True)
+            s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
             d[c] = pd.to_numeric(s, errors="coerce")
 
     return d
+
 
 # ================================================================
 
