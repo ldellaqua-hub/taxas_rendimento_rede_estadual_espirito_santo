@@ -26,7 +26,7 @@ st.title("📈 Painel IDEB – Rede Estadual/ES (por Município)")
 st.markdown(
     """
     Esta aplicação apresenta um MVP (Produto Mínimo Viável) como parte da avaliação da disciplina de **Cloud Computing**
-    para produtos de dados na Pós‑graduação em **Mineração de Dados**.
+    para produtos de dados na Pós-graduação em **Mineração de Dados**.
 
     - Professor: **Maxwell Monteiro**  
     - Aluna: **Luciene Dellaqua Bergamin**
@@ -121,7 +121,7 @@ def coerce_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 def detect_muni_col(df: pd.DataFrame) -> str:
-    """Tenta descobrir a coluna de município."""
+    """Mantida para compatibilidade (não utilizada nas seções que exibem nomes)."""
     candidates = [c for c in df.columns if any(k in c.lower() for k in ["muni", "municí", "municipio"])]
     return candidates[0] if candidates else df.columns[0]
 
@@ -137,6 +137,7 @@ def ffill_text_cols(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = df[col].ffill()
     return df
 
+# ---------- nomes/códigos de município ----------
 def _muni_name_col(df: pd.DataFrame) -> str | None:
     prefer = ["NO_MUNICIPIO", "NOME_MUNICIPIO", "NM_MUNICIPIO", "MUNICIPIO"]
     for c in prefer:
@@ -170,15 +171,13 @@ def get_muni_label_col(df: pd.DataFrame) -> tuple[str | None, str]:
     label = name or code or df.columns[0]
     return code, label
 
-
-
-# ===== NOVO: normaliza rótulos de 'REDE' e permite filtrar =====
+# ===== normalização da coluna REDE =====
 def normalize_rede(value):
     """Padroniza rótulos de rede para facilitar o filtro."""
     if pd.isna(value):
         return value
     t = str(value).strip().lower()
-    if t.startswith("estad"):   # estadual, ESTADUAL…
+    if t.startswith("estad"):
         return "Estadual"
     if t.startswith("munic") or t.startswith("públi") or t.startswith("publi"):
         return "Municipal/Pública"
@@ -233,11 +232,7 @@ def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
     return d
 
 
-
-
 # ================================================================
-
-
 # =============================
 # SEÇÃO: INÍCIO
 # =============================
@@ -299,30 +294,29 @@ elif sec == "Panorama IDEB":
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
 
-    # ===== NOVO: normaliza e filtra apenas REDE = 'Estadual'
+    # normaliza e filtra REDE = 'Estadual'
     if "REDE" in df.columns:
         df["REDE"] = df["REDE"].map(normalize_rede)
         df = df[df["REDE"] == "Estadual"].copy()
-    # ================================================
 
     # Prévia
     st.subheader("🔍 Prévia da Tabela")
     st.dataframe(df.head(20), use_container_width=True)
 
-    # (1) OBRIGATÓRIO: Tabela descritiva
+    # (1) Tabela descritiva
     st.subheader("📈 Estatísticas Descritivas (Pandas `describe()`)")
     desc = df.select_dtypes(include="number").describe().T
     st.dataframe(desc, use_container_width=True)
 
-    # (2) Gráfico de barras
+    # (2) Gráfico de barras (livre)
     st.subheader("📊 Gráfico de Barras – municípios x métrica")
-    muni_col = detect_muni_col(df)
+    muni_col_guess = detect_muni_col(df)
     num_cols = df.select_dtypes(include="number").columns.tolist()
     if not num_cols:
         st.error("Não há colunas numéricas para plotar.")
         st.stop()
 
-    col_cat = st.selectbox("Coluna categórica (X):", df.columns, index=list(df.columns).index(muni_col))
+    col_cat = st.selectbox("Coluna categórica (X):", df.columns, index=list(df.columns).index(muni_col_guess))
     sugestoes = [c for c in num_cols if any(k in c.lower() for k in ["ideb", "nota", "índice", "indice", "profici", "aprova"])]
     y_default = sugestoes[0] if sugestoes else num_cols[0]
     col_y = st.selectbox("Métrica (Y):", num_cols, index=num_cols.index(y_default))
@@ -372,13 +366,13 @@ elif sec == "Ranking de Municípios":
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
 
-    # ===== NOVO: normaliza e filtra apenas REDE = 'Estadual'
     if "REDE" in df.columns:
         df["REDE"] = df["REDE"].map(normalize_rede)
         df = df[df["REDE"] == "Estadual"].copy()
-    # ================================================
 
-    muni_col = detect_muni_col(df)
+    # >>> usar nome (label) do município
+    code_col, label_col = get_muni_label_col(df)
+
     num_cols = df.select_dtypes(include="number").columns.tolist()
     if not num_cols:
         st.error("A base não possui colunas numéricas para ranquear.")
@@ -394,15 +388,15 @@ elif sec == "Ranking de Municípios":
         topn = st.slider("Top N", min_value=5, max_value=min(100, len(df)), value=min(20, len(df)))
         termo = st.text_input("Filtrar por nome do município (opcional)")
 
-    base = df[[muni_col, metrica]].dropna().copy()
-    base[muni_col] = base[muni_col].astype(str)
+    base = df[[label_col, metrica]].dropna().copy()
+    base[label_col] = base[label_col].astype(str)
     if termo.strip():
-        base = base[base[muni_col].str.contains(termo.strip(), case=False, na=False)]
+        base = base[base[label_col].str.contains(termo.strip(), case=False, na=False)]
 
     asc = (ordem == "Menor → Maior")
     base = base.sort_values(metrica, ascending=asc, kind="mergesort")
     base["Posição"] = range(1, len(base) + 1)
-    ranking = base[["Posição", muni_col, metrica]].head(topn)
+    ranking = base[["Posição", label_col, metrica]].head(topn).rename(columns={label_col: "Município"})
 
     st.subheader("📋 Tabela do Ranking")
     st.dataframe(ranking.reset_index(drop=True), use_container_width=True)
@@ -412,8 +406,7 @@ elif sec == "Ranking de Municípios":
                        file_name=f"ranking_municipios_{metrica}.csv", mime="text/csv")
 
     st.subheader("📊 Top N — Gráfico de Barras")
-    gdf = ranking.rename(columns={muni_col: "Município"})
-    gdf["Município"] = gdf["Município"].astype(str)
+    gdf = ranking.copy()
 
     if HAS_ALTAIR:
         chart = (
@@ -433,12 +426,11 @@ elif sec == "Ranking de Municípios":
     st.caption("Dica: ajuste a métrica, a ordenação e use o filtro para localizar um município.")
 
 # =============================
-# PLACEHOLDERS
+# SEÇÃO: EVOLUÇÃO TEMPORAL
 # =============================
 elif sec == "Evolução Temporal":
     st.header("📈 Evolução Temporal — Ensino Médio (ES)")
 
-    # 1) Carregar e preparar a base
     try:
         df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
     except Exception as e:
@@ -449,14 +441,14 @@ elif sec == "Evolução Temporal":
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
 
-    # Filtra só rede Estadual (como nas outras seções)
     if "REDE" in df.columns:
         df["REDE"] = df["REDE"].map(normalize_rede)
         df = df[df["REDE"] == "Estadual"].copy()
 
-    muni_col = detect_muni_col(df)
+    # >>> usar nome (label)
+    code_col, label_col = get_muni_label_col(df)
 
-    # 2) Descobrir famílias de colunas com ANO no nome
+    # Descobrir famílias de colunas com ANO no nome
     import re
     cols_com_ano = [c for c in df.columns if re.search(r"20\d{2}", c)]
     if not cols_com_ano:
@@ -473,11 +465,11 @@ elif sec == "Evolução Temporal":
 
     familias_ordenadas = sorted(familias.keys())
 
-    # 3) Opções do usuário
+    # Opções
     with st.sidebar:
         st.markdown("### ⚙️ Opções — Evolução")
         fam_escolhida = st.selectbox("Família da métrica:", familias_ordenadas)
-        municipios = sorted(df[muni_col].dropna().astype(str).unique().tolist())
+        municipios = sorted(df[label_col].dropna().astype(str).unique().tolist())
         sel_munis = st.multiselect(
             "Municípios (1 ou mais):",
             municipios,
@@ -489,10 +481,10 @@ elif sec == "Evolução Temporal":
         st.info("Selecione ao menos um município.")
         st.stop()
 
-    # 4) Criar tabela "longa" (ano, valor) para a família escolhida
+    # Tabela "longa"
     cols_familia = familias[fam_escolhida]
-    base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_familia].copy()
-    base[muni_col] = base[muni_col].astype(str)
+    base = df[df[label_col].astype(str).isin(sel_munis)][[label_col] + cols_familia].copy()
+    base[label_col] = base[label_col].astype(str)
 
     long_rows = []
     for c in cols_familia:
@@ -500,13 +492,9 @@ elif sec == "Evolução Temporal":
         if not anos:
             continue
         ano = int(anos[0])
-        tmp = base[[muni_col, c]].rename(columns={c: "valor"})
+        tmp = base[[label_col, c]].rename(columns={c: "valor", label_col: "Município"})
 
-        # 🔧 LIMPEZA CRÍTICA: força numérico e trata traços/strings
-        tmp["valor"] = (
-            tmp["valor"]
-            .replace({"-": None, "None": None, "nan": None, "NA": None})
-        )
+        tmp["valor"] = tmp["valor"].replace({"-": None, "None": None, "nan": None, "NA": None})
         tmp["valor"] = pd.to_numeric(tmp["valor"], errors="coerce")
 
         tmp["ano"] = ano
@@ -514,72 +502,60 @@ elif sec == "Evolução Temporal":
 
     if not long_rows:
         st.warning("Não foi possível extrair anos das colunas da família selecionada.")
-        st.stop()
-
-    long_df = pd.concat(long_rows, ignore_index=True)
-
-    # remove linhas sem valor numérico
-    long_df = long_df.dropna(subset=["valor"])
-
-    # Se houver várias colunas no mesmo ano (ex.: _2017_1.._4), agrega por média
-    long_df = (
-        long_df
-        .groupby([muni_col, "ano"], as_index=False, sort=True)["valor"]
-        .mean()  # agora é seguro, só tem número
-        .sort_values(["ano", muni_col])
-    )
-
-    if long_df.empty:
-        st.warning("Sem valores numéricos válidos para a combinação escolhida.")
-        st.stop()
-
-    # 5) Plot
-    st.subheader(f"📊 Série temporal — {fam_escolhida}")
-    if HAS_ALTAIR:
-        chart = (
-            alt.Chart(long_df)
-            .mark_line(point=True)
-            .encode(
-                x=alt.X("ano:O", title="Ano", sort="ascending"),
-                y=alt.Y("valor:Q", title=f"{fam_escolhida}"),
-                color=alt.Color(f"{muni_col}:N", title="Município"),
-                tooltip=[muni_col, "ano", alt.Tooltip("valor:Q", format=".3f")],
-            )
-            .properties(height=420)
-        )
-        st.altair_chart(chart, use_container_width=True)
     else:
-        pivot = long_df.pivot(index="ano", columns=muni_col, values="valor").sort_index()
-        st.line_chart(pivot)
-
-    # 6) (Opcional) média estadual (entre municípios selecionados)
-    if mostrar_media_estado and HAS_ALTAIR:
-        medias = long_df.groupby("ano", as_index=False)["valor"].mean()
-        media_chart = (
-            alt.Chart(medias)
-            .mark_line(point=True, strokeDash=[6, 3], color="black")
-            .encode(x="ano:O", y="valor:Q", tooltip=[alt.Tooltip("valor:Q", format=".3f"), "ano"])
+        long_df = pd.concat(long_rows, ignore_index=True)
+        long_df = long_df.dropna(subset=["valor"])
+        long_df = (
+            long_df
+            .groupby(["Município", "ano"], as_index=False, sort=True)["valor"]
+            .mean()
+            .sort_values(["ano", "Município"])
         )
-        st.altair_chart(chart + media_chart, use_container_width=True)
 
-    # 7) Tabela e download
-    st.subheader("🗂️ Dados (formato long)")
-    st.dataframe(long_df, use_container_width=True)
-    st.download_button(
-        "⬇️ Baixar CSV da série",
-        data=long_df.to_csv(index=False).encode("utf-8"),
-        file_name=f"serie_temporal_{fam_escolhida}.csv",
-        mime="text/csv",
-    )
+        # Gráfico
+        st.subheader(f"📊 Série temporal — {fam_escolhida}")
+        if HAS_ALTAIR:
+            chart = (
+                alt.Chart(long_df)
+                .mark_line(point=True)
+                .encode(
+                    x=alt.X("ano:O", title="Ano", sort="ascending"),
+                    y=alt.Y("valor:Q", title=f"{fam_escolhida}"),
+                    color=alt.Color("Município:N", title="Município"),
+                    tooltip=["Município", "ano", alt.Tooltip("valor:Q", format=".3f")],
+                )
+                .properties(height=420)
+            )
+            st.altair_chart(chart, use_container_width=True)
+        else:
+            pivot = long_df.pivot(index="ano", columns="Município", values="valor").sort_index()
+            st.line_chart(pivot)
 
-    st.caption(
-        "Observação: quando há múltiplas colunas no mesmo ano (ex.: 2017_1, 2017_2, 2017_3, 2017_4), "
-        "o valor anual mostrado é a **média** dessas colunas."
-    )
+        # média estadual (opcional)
+        if mostrar_media_estado and HAS_ALTAIR:
+            medias = long_df.groupby("ano", as_index=False)["valor"].mean()
+            media_chart = (
+                alt.Chart(medias)
+                .mark_line(point=True, strokeDash=[6, 3], color="black")
+                .encode(x="ano:O", y="valor:Q", tooltip=[alt.Tooltip("valor:Q", format=".3f"), "ano"])
+            )
+            st.altair_chart(chart + media_chart, use_container_width=True)
 
-# =============================
-# SEÇÃO: COMPARADOR
-# =============================
+        # Tabela e download
+        st.subheader("🗂️ Dados (formato long)")
+        st.dataframe(long_df, use_container_width=True)
+        st.download_button(
+            "⬇️ Baixar CSV da série",
+            data=long_df.to_csv(index=False).encode("utf-8"),
+            file_name=f"serie_temporal_{fam_escolhida}.csv",
+            mime="text/csv",
+        )
+
+        st.caption(
+            "Observação: quando há múltiplas colunas no mesmo ano (ex.: 2017_1, 2017_2, 2017_3, 2017_4), "
+            "o valor anual mostrado é a **média** dessas colunas."
+        )
+
 # =============================
 # SEÇÃO: COMPARADOR
 # =============================
@@ -588,7 +564,6 @@ elif sec == "Comparador":
 
     import re
 
-    # 1) Carrega e prepara a base
     try:
         df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
     except Exception as e:
@@ -599,24 +574,22 @@ elif sec == "Comparador":
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
 
-    # Mantém somente REDE = Estadual (e normaliza rótulos da coluna)
     if "REDE" in df.columns:
         df["REDE"] = df["REDE"].map(normalize_rede)
         df = df[df["REDE"] == "Estadual"].copy()
 
-    muni_col = detect_muni_col(df)
+    # >>> usar nome (label)
+    code_col, label_col = get_muni_label_col(df)
 
-    # 2) Descobre famílias de colunas que contêm ano (20XX) no nome
+    # famílias com ano
     cols_com_ano = [c for c in df.columns if re.search(r"20\d{2}", c)]
     if not cols_com_ano:
         st.warning("Não encontrei colunas com ano no nome (padrão 20XX).")
         st.stop()
 
     def familia(col: str) -> str:
-        """Retorna o prefixo antes do ano (ex.: VL_APROVACAO_2017 -> VL_APROVACAO)."""
         return re.split(r"20\d{2}", col)[0].rstrip("_")
 
-    # famílias -> {familia: {ano: [colunas...]}}
     familias: dict[str, dict[int, list[str]]] = {}
     for c in cols_com_ano:
         fam = familia(c)
@@ -625,10 +598,10 @@ elif sec == "Comparador":
 
     familias_ordenadas = sorted(familias.keys())
 
-    # 3) Filtros laterais
+    # Filtros laterais
     with st.sidebar:
         st.markdown("### ⚙️ Opções — Comparador")
-        municipios = sorted(df[muni_col].dropna().astype(str).unique().tolist())
+        municipios = sorted(df[label_col].dropna().astype(str).unique().tolist())
         sel_munis = st.multiselect(
             "Municípios (2+):",
             municipios,
@@ -639,7 +612,7 @@ elif sec == "Comparador":
         st.info("Selecione **pelo menos 2 municípios** para comparar.")
         st.stop()
 
-    # 4) Abas
+    # Abas
     tab_bar, tab_scatter = st.tabs(["📊 Barras (1 métrica)", "🔎 Dispersão (2 métricas)"])
 
     # ----------------- ABA 1: BARRAS -----------------
@@ -655,36 +628,35 @@ elif sec == "Comparador":
             topn = st.slider("Top N (após filtro de municípios):", 2, min(50, len(sel_munis)), min(10, len(sel_munis)))
 
         cols_ano1 = familias[fam1][ano1]
-        base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_ano1].copy()
-        base[muni_col] = base[muni_col].astype(str)
+        base = df[df[label_col].astype(str).isin(sel_munis)][[label_col] + cols_ano1].copy()
+        base[label_col] = base[label_col].astype(str)
 
-        # ✅ usa o helper definido no topo do arquivo
         base = _coerce_block(base, cols_ano1)
 
         comp = (
             base
             .assign(valor=base[cols_ano1].mean(axis=1, skipna=True))
-            [[muni_col, "valor"]]
+            [[label_col, "valor"]]
             .dropna(subset=["valor"])
-            .groupby(muni_col, as_index=False)["valor"].mean()
+            .groupby(label_col, as_index=False)["valor"].mean()
             .sort_values("valor", ascending=False)
         )
-        comp_top = comp.head(topn)
+        comp_top = comp.head(topn).rename(columns={label_col: "Município"})
 
         if HAS_ALTAIR:
             chart = (
                 alt.Chart(comp_top)
                 .mark_bar()
                 .encode(
-                    x=alt.X(f"{muni_col}:N", sort='-y', axis=alt.Axis(labelAngle=-40, title="Município")),
+                    x=alt.X("Município:N", sort='-y', axis=alt.Axis(labelAngle=-40, title="Município")),
                     y=alt.Y("valor:Q", title=f"{fam1} — {ano1}"),
-                    tooltip=[muni_col, alt.Tooltip("valor:Q", format=".3f")],
+                    tooltip=["Município", alt.Tooltip("valor:Q", format=".3f")],
                 )
                 .properties(height=420)
             )
             st.altair_chart(chart, use_container_width=True)
         else:
-            st.bar_chart(comp_top.set_index(muni_col)["valor"])
+            st.bar_chart(comp_top.set_index("Município")["valor"])
 
         st.dataframe(comp_top.reset_index(drop=True), use_container_width=True)
         st.download_button(
@@ -712,19 +684,19 @@ elif sec == "Comparador":
         cols_y = familias[fam_y][ano_y]
         cols_all = cols_x + cols_y
 
-        base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_all].copy()
-        base[muni_col] = base[muni_col].astype(str)
+        base = df[df[label_col].astype(str).isin(sel_munis)][[label_col] + cols_all].copy()
+        base[label_col] = base[label_col].astype(str)
 
-        # ✅ usa o helper para garantir numérico nas colunas escolhidas
         base = _coerce_block(base, cols_all)
 
         base["X"] = base[cols_x].mean(axis=1, skipna=True)
         base["Y"] = base[cols_y].mean(axis=1, skipna=True)
 
         scatter_df = (
-            base[[muni_col, "X", "Y"]]
+            base[[label_col, "X", "Y"]]
             .dropna(subset=["X", "Y"])
-            .groupby(muni_col, as_index=False)[["X", "Y"]].mean()
+            .groupby(label_col, as_index=False)[["X", "Y"]].mean()
+            .rename(columns={label_col: "Município"})
         )
 
         if scatter_df.empty:
@@ -737,17 +709,17 @@ elif sec == "Comparador":
                     .encode(
                         x=alt.X("X:Q", title=f"{fam_x} — {ano_x}"),
                         y=alt.Y("Y:Q", title=f"{fam_y} — {ano_y}"),
-                        tooltip=[muni_col, alt.Tooltip("X:Q", format=".3f"), alt.Tooltip("Y:Q", format=".3f")],
+                        tooltip=["Município", alt.Tooltip("X:Q", format=".3f"), alt.Tooltip("Y:Q", format=".3f")],
                     )
                 )
                 labels = (
                     alt.Chart(scatter_df)
                     .mark_text(align="left", dx=7, dy=3)
-                    .encode(x="X:Q", y="Y:Q", text=f"{muni_col}:N")
+                    .encode(x="X:Q", y="Y:Q", text="Município:N")
                 )
                 st.altair_chart(sc + labels, use_container_width=True)
             else:
-                st.scatter_chart(scatter_df.set_index(muni_col))
+                st.scatter_chart(scatter_df.set_index("Município"))
 
             st.dataframe(scatter_df, use_container_width=True)
             st.download_button(
@@ -762,8 +734,6 @@ elif sec == "Comparador":
         "Dispersão: cada eixo usa a média da família/ano escolhidos."
     )
 
-
-
 # =============================
 # SEÇÃO: METODOLOGIA
 # =============================
@@ -777,6 +747,7 @@ elif sec == "Metodologia & Fontes":
           se repete em múltiplas colunas por ano.
         """
     )
+
 
 
 
