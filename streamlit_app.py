@@ -160,12 +160,13 @@ import pandas as pd
 
 def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
     """
-    Converte as colunas indicadas para numéricas de forma robusta.
-    Aceita 'cols' como lista de strings OU lista de listas (aninhada).
+    Converte as colunas indicadas para numéricas (robusto a listas aninhadas e nomes duplicados).
+    Aceita 'cols' como lista/tupla/Index/ndarray (inclusive aninhados).
+    Trata vírgula decimal e nulos textuais: '-', 'None', 'nan', 'NA', ''.
     """
     d = d.copy()
 
-    # Achata cols caso venham listas/arrays dentro da lista principal
+    # 1) Achata 'cols'
     flat_cols = []
     if isinstance(cols, (list, tuple, pd.Index, np.ndarray)):
         for c in cols:
@@ -176,23 +177,36 @@ def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
     else:
         flat_cols = [cols]
 
-    # Mantém só as que existem no DataFrame
+    # 2) Mantém só colunas que existem
     flat_cols = [c for c in flat_cols if c in d.columns]
     if not flat_cols:
         return d
 
+    # 3) Converte cada coluna (suporta nomes duplicados)
     for c in flat_cols:
         s = d[c]
-        if is_numeric_dtype(s):
-            d[c] = pd.to_numeric(s, errors="coerce")
-        else:
-            # força string, normaliza vírgula, trata nulos "textuais"
+
+        # Se houver nomes duplicados, s será um DataFrame (várias colunas com o mesmo rótulo)
+        if isinstance(s, pd.DataFrame):
+            # converte cada subcoluna separadamente
+            for sub in s.columns:
+                col = d[sub]
+                if not is_numeric_dtype(col):
+                    col = col.astype(str)
+                    col = col.str.replace(",", ".", regex=False)
+                    col = col.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
+                d[sub] = pd.to_numeric(col, errors="coerce")
+            continue  # prossiga para o próximo nome
+
+        # Caso comum: s é Series
+        if not is_numeric_dtype(s):
             s = s.astype(str)
-            s = s.replace(",", ".", regex=True)
+            s = s.str.replace(",", ".", regex=False)
             s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
-            d[c] = pd.to_numeric(s, errors="coerce")
+        d[c] = pd.to_numeric(s, errors="coerce")
 
     return d
+
 
 
 # ================================================================
