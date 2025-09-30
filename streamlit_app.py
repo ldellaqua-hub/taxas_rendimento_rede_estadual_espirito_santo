@@ -497,10 +497,15 @@ elif sec == "Evolução Temporal":
 # =============================
 # SEÇÃO: COMPARADOR
 # =============================
+# =============================
+# SEÇÃO: COMPARADOR
+# =============================
 elif sec == "Comparador":
     st.header("🔀 Comparador de Municípios — Ensino Médio (ES)")
 
     import re
+
+    # 1) Carrega e prepara a base
     try:
         df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
     except Exception as e:
@@ -510,22 +515,26 @@ elif sec == "Comparador":
     df.columns = [str(c).strip() for c in df.columns]
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
+
+    # Mantém somente REDE = Estadual (e normaliza rótulos da coluna)
     if "REDE" in df.columns:
         df["REDE"] = df["REDE"].map(normalize_rede)
-        # compara só Rede Estadual
         df = df[df["REDE"] == "Estadual"].copy()
 
     muni_col = detect_muni_col(df)
 
+    # 2) Descobre famílias de colunas que contêm ano (20XX) no nome
     cols_com_ano = [c for c in df.columns if re.search(r"20\d{2}", c)]
     if not cols_com_ano:
         st.warning("Não encontrei colunas com ano no nome (padrão 20XX).")
         st.stop()
 
-    def familia(col):
+    def familia(col: str) -> str:
+        """Retorna o prefixo antes do ano (ex.: VL_APROVACAO_2017 -> VL_APROVACAO)."""
         return re.split(r"20\d{2}", col)[0].rstrip("_")
 
-    familias = {}
+    # famílias -> {familia: {ano: [colunas...]}}
+    familias: dict[str, dict[int, list[str]]] = {}
     for c in cols_com_ano:
         fam = familia(c)
         yr = int(re.findall(r"(20\d{2})", c)[0])
@@ -533,19 +542,24 @@ elif sec == "Comparador":
 
     familias_ordenadas = sorted(familias.keys())
 
+    # 3) Filtros laterais
     with st.sidebar:
         st.markdown("### ⚙️ Opções — Comparador")
         municipios = sorted(df[muni_col].dropna().astype(str).unique().tolist())
-        sel_munis = st.multiselect("Municípios (2+):", municipios,
-                                   default=municipios[:5] if len(municipios) >= 5 else municipios)
+        sel_munis = st.multiselect(
+            "Municípios (2+):",
+            municipios,
+            default=municipios[:5] if len(municipios) >= 5 else municipios
+        )
 
     if len(sel_munis) < 2:
         st.info("Selecione **pelo menos 2 municípios** para comparar.")
         st.stop()
 
+    # 4) Abas
     tab_bar, tab_scatter = st.tabs(["📊 Barras (1 métrica)", "🔎 Dispersão (2 métricas)"])
 
-    # --- Barras ---
+    # ----------------- ABA 1: BARRAS -----------------
     with tab_bar:
         st.subheader("📊 Barras — uma métrica em um ano")
         col1, col2, col3 = st.columns(3)
@@ -560,7 +574,9 @@ elif sec == "Comparador":
         cols_ano1 = familias[fam1][ano1]
         base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_ano1].copy()
         base[muni_col] = base[muni_col].astype(str)
-        base = _coerce_block(base, cols_ano1)  # <--- usa helper definido fora
+
+        # ✅ usa o helper definido no topo do arquivo
+        base = _coerce_block(base, cols_ano1)
 
         comp = (
             base
@@ -595,9 +611,10 @@ elif sec == "Comparador":
             mime="text/csv",
         )
 
-    # --- Dispersão ---
+    # ----------------- ABA 2: DISPERSÃO -----------------
     with tab_scatter:
         st.subheader("🔎 Dispersão — duas métricas (X vs Y)")
+
         c1, c2 = st.columns(2)
         with c1:
             fam_x = st.selectbox("Família (eixo X):", familias_ordenadas, key="cmp_fam_x")
@@ -614,7 +631,9 @@ elif sec == "Comparador":
 
         base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_all].copy()
         base[muni_col] = base[muni_col].astype(str)
-        base = _coerce_block(base, cols_all)   # <--- usa helper definido fora
+
+        # ✅ usa o helper para garantir numérico nas colunas escolhidas
+        base = _coerce_block(base, cols_all)
 
         base["X"] = base[cols_x].mean(axis=1, skipna=True)
         base["Y"] = base[cols_y].mean(axis=1, skipna=True)
@@ -659,6 +678,7 @@ elif sec == "Comparador":
         "Barras: se houver múltiplas colunas para o mesmo ano (ex.: 2017_1…2017_4), usamos a **média**. "
         "Dispersão: cada eixo usa a média da família/ano escolhidos."
     )
+
 
 
 # =============================
