@@ -355,7 +355,7 @@ elif sec == "Ranking de Municípios":
 elif sec == "Evolução Temporal":
     st.header("📈 Evolução Temporal — Ensino Médio (ES)")
 
-    import re
+    # 1) Carregar e preparar a base
     try:
         df = load_xlsx_local("IDEB_ensino_medio_municipios_2023_ES.xlsx", sheet_name=0)
     except Exception as e:
@@ -365,15 +365,19 @@ elif sec == "Evolução Temporal":
     df.columns = [str(c).strip() for c in df.columns]
     df = coerce_numeric_cols(df)
     df = ffill_text_cols(df)
+
+    # Filtra só rede Estadual (como nas outras seções)
     if "REDE" in df.columns:
         df["REDE"] = df["REDE"].map(normalize_rede)
+        df = df[df["REDE"] == "Estadual"].copy()
 
     muni_col = detect_muni_col(df)
 
-    # detecta colunas com ano
+    # 2) Descobrir famílias de colunas com ANO no nome
+    import re
     cols_com_ano = [c for c in df.columns if re.search(r"20\d{2}", c)]
     if not cols_com_ano:
-        st.warning("Não encontrei colunas com ano no nome (formato 20XX).")
+        st.warning("Não encontrei colunas com ano no nome (padrão 20XX).")
         st.stop()
 
     def familia(col):
@@ -382,53 +386,113 @@ elif sec == "Evolução Temporal":
     familias = {}
     for c in cols_com_ano:
         fam = familia(c)
-        yr = int(re.findall(r"(20\d{2})", c)[0])
-        familias.setdefault(fam, {}).setdefault(yr, []).append(c)
+        familias.setdefault(fam, []).append(c)
 
     familias_ordenadas = sorted(familias.keys())
-    municipios = sorted(df[muni_col].dropna().astype(str).unique().tolist())
 
-    c1, c2 = st.columns(2)
-    with c1:
-        fam_sel = st.selectbox("Família/métrica:", familias_ordenadas)
-    with c2:
-        munis_sel = st.multiselect("Municípios:", municipios, default=municipios[:5])
+    # 3) Opções do usuário
+    with st.sidebar:
+        st.markdown("### ⚙️ Opções — Evolução")
+        fam_escolhida = st.selectbox("Família da métrica:", familias_ordenadas)
+        municipios = sorted(df[muni_col].dropna().astype(str).unique().tolist())
+        sel_munis = st.multiselect(
+            "Municípios (1 ou mais):",
+            municipios,
+            default=municipios[:3] if len(municipios) >= 3 else municipios
+        )
+        mostrar_media_estado = st.checkbox("Incluir média do Estado (entre municípios selecionados)")
 
-    anos = sorted(familias[fam_sel].keys())
-    cols_por_ano = familias[fam_sel]
+    if not sel_munis:
+        st.info("Selecione ao menos um município.")
+        st.stop()
 
-    base = df[df[muni_col].astype(str).isin(munis_sel)].copy()
+    # 4) Criar tabela "longa" (ano, valor) para a família escolhida
+    cols_familia = familias[fam_escolhida]
+    base = df[df[muni_col].astype(str).isin(sel_munis)][[muni_col] + cols_familia].copy()
+    base[muni_col] = base[muni_col].astype(str)
+
     long_rows = []
-    for ano in anos:
-        cols = cols_por_ano[ano]
-        tmp = base[[muni_col] + cols].copy()
-        tmp["valor"] = tmp[cols].mean(axis=1, skipna=True)
+    for c in cols_familia:
+        anos = re.findall(r"(20\d{2})", c)
+        if not anos:
+            continue
+        ano = int(anos[0])
+        tmp = base[[muni_col, c]].rename(columns={c: "valor"})
+
+        # 🔧 LIMPEZA CRÍTICA: força numérico e trata traços/strings
+        tmp["valor"] = (
+            tmp["valor"]
+            .replace({"-": None, "None": None, "nan": None, "NA": None})
+        )
+        tmp["valor"] = pd.to_numeric(tmp["valor"], errors="coerce")
+
         tmp["ano"] = ano
-        long_rows.append(tmp[[muni_col, "ano", "valor"]])
+        long_rows.append(tmp)
+
+    if not long_rows:
+        st.warning("Não foi possível extrair anos das colunas da família selecionada.")
+        st.stop()
 
     long_df = pd.concat(long_rows, ignore_index=True)
+
+    # remove linhas sem valor numérico
     long_df = long_df.dropna(subset=["valor"])
 
+    # Se houver várias colunas no mesmo ano (ex.: _2017_1.._4), agrega por média
+    long_df = (
+        long_df
+        .groupby([muni_col, "ano"], as_index=False, sort=True)["valor"]
+        .mean()  # agora é seguro, só tem número
+        .sort_values(["ano", muni_col])
+    )
+
+    if long_df.empty:
+        st.warning("Sem valores numéricos válidos para a combinação escolhida.")
+        st.stop()
+
+    # 5) Plot
+    st.subheader(f"📊 Série temporal — {fam_escolhida}")
     if HAS_ALTAIR:
-        line = (
+        chart = (
             alt.Chart(long_df)
             .mark_line(point=True)
             .encode(
-                x=alt.X("ano:O", title="Ano"),
-                y=alt.Y("valor:Q", title=f"{fam_sel}"),
+                x=alt.X("ano:O", title="Ano", sort="ascending"),
+                y=alt.Y("valor:Q", title=f"{fam_escolhida}"),
                 color=alt.Color(f"{muni_col}:N", title="Município"),
                 tooltip=[muni_col, "ano", alt.Tooltip("valor:Q", format=".3f")],
             )
             .properties(height=420)
         )
-        st.altair_chart(line, use_container_width=True)
+        st.altair_chart(chart, use_container_width=True)
     else:
-        # fallback simples: pivota e plota
-        pivot = long_df.pivot_table(index="ano", columns=muni_col, values="valor")
+        pivot = long_df.pivot(index="ano", columns=muni_col, values="valor").sort_index()
         st.line_chart(pivot)
 
-    st.dataframe(long_df.sort_values(["ano", muni_col]), use_container_width=True)
+    # 6) (Opcional) média estadual (entre municípios selecionados)
+    if mostrar_media_estado and HAS_ALTAIR:
+        medias = long_df.groupby("ano", as_index=False)["valor"].mean()
+        media_chart = (
+            alt.Chart(medias)
+            .mark_line(point=True, strokeDash=[6, 3], color="black")
+            .encode(x="ano:O", y="valor:Q", tooltip=[alt.Tooltip("valor:Q", format=".3f"), "ano"])
+        )
+        st.altair_chart(chart + media_chart, use_container_width=True)
 
+    # 7) Tabela e download
+    st.subheader("🗂️ Dados (formato long)")
+    st.dataframe(long_df, use_container_width=True)
+    st.download_button(
+        "⬇️ Baixar CSV da série",
+        data=long_df.to_csv(index=False).encode("utf-8"),
+        file_name=f"serie_temporal_{fam_escolhida}.csv",
+        mime="text/csv",
+    )
+
+    st.caption(
+        "Observação: quando há múltiplas colunas no mesmo ano (ex.: 2017_1, 2017_2, 2017_3, 2017_4), "
+        "o valor anual mostrado é a **média** dessas colunas."
+    )
 
 # =============================
 # SEÇÃO: COMPARADOR
