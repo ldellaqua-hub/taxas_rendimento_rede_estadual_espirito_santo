@@ -160,9 +160,10 @@ import pandas as pd
 
 def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
     """
-    Converte as colunas indicadas para numéricas (robusto a listas aninhadas e nomes duplicados).
-    Aceita 'cols' como lista/tupla/Index/ndarray (inclusive aninhados).
-    Trata vírgula decimal e nulos textuais: '-', 'None', 'nan', 'NA', ''.
+    Converte para numérico as colunas indicadas.
+    - Aceita listas aninhadas (ex.: cols_x + cols_y).
+    - Funciona mesmo com NOMES DUPLICADOS, iterando por posição.
+    - Trata vírgula decimal e nulos textuais: '-', 'None', 'nan', 'NA', ''.
     """
     d = d.copy()
 
@@ -177,35 +178,25 @@ def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
     else:
         flat_cols = [cols]
 
-    # 2) Mantém só colunas que existem
+    # 2) Mantém só rótulos que existem
     flat_cols = [c for c in flat_cols if c in d.columns]
     if not flat_cols:
         return d
 
-    # 3) Converte cada coluna (suporta nomes duplicados)
-    for c in flat_cols:
-        s = d[c]
-
-        # Se houver nomes duplicados, s será um DataFrame (várias colunas com o mesmo rótulo)
-        if isinstance(s, pd.DataFrame):
-            # converte cada subcoluna separadamente
-            for sub in s.columns:
-                col = d[sub]
-                if not is_numeric_dtype(col):
-                    col = col.astype(str)
-                    col = col.str.replace(",", ".", regex=False)
-                    col = col.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
-                d[sub] = pd.to_numeric(col, errors="coerce")
-            continue  # prossiga para o próximo nome
-
-        # Caso comum: s é Series
-        if not is_numeric_dtype(s):
-            s = s.astype(str)
-            s = s.str.replace(",", ".", regex=False)
-            s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
-        d[c] = pd.to_numeric(s, errors="coerce")
+    # 3) Para cada rótulo, converte TODAS as posições onde ele aparece
+    cols_array = np.array(d.columns, dtype=object)
+    for name in flat_cols:
+        positions = np.where(cols_array == name)[0].tolist()  # lida com duplicados
+        for pos in positions:
+            s = d.iloc[:, pos]
+            if not is_numeric_dtype(s):
+                s = s.astype(str)
+                s = s.str.replace(",", ".", regex=False)
+                s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
+            d.iloc[:, pos] = pd.to_numeric(s, errors="coerce")
 
     return d
+
 
 
 
