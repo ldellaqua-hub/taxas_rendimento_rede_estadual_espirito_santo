@@ -153,6 +153,32 @@ def normalize_rede(value):
         return "Privada"
     return str(value).strip().title()
 
+# ===== Helper robusto para converter várias colunas em numéricas =====
+from pandas.api.types import is_numeric_dtype
+
+def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
+    """
+    Converte um conjunto de colunas para numéricas:
+    - se a coluna já for numérica, só garante via to_numeric;
+    - se for texto, normaliza vírgula/ponto e trata '-', 'None', 'nan', 'NA', '' como NaN.
+    """
+    d = d.copy()
+    cols = [c for c in list(cols) if c in d.columns]
+    if not cols:
+        return d
+
+    for c in cols:
+        s = d[c]
+        if is_numeric_dtype(s):
+            d[c] = pd.to_numeric(s, errors="coerce")
+        else:
+            s = s.astype(str)
+            s = s.str.replace(",", ".", regex=False)
+            s = s.replace({"-": None, "None": None, "nan": None, "NA": None, "": None})
+            d[c] = pd.to_numeric(s, errors="coerce")
+
+    return d
+
 def _coerce_block(d: pd.DataFrame, cols) -> pd.DataFrame:
     """
     Converte um conjunto de colunas para numéricas de forma robusta:
